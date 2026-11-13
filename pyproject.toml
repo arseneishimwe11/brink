@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brink"
+version = "0.1.0"
+description = "Brink: flags dangerous ground shapes from one handheld phone video."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "Proprietary" }
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "opencv-python-headless>=4.9",
+  "pycolmap>=3.11",
+  "open3d>=0.19",
+  "scikit-image>=0.24",
+  "pydantic>=2.6",
+  "typer>=0.12",
+  "pyyaml>=6",
+  "reportlab>=4",
+  "matplotlib>=3.8",
+  "pillow>=10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
+learned = ["torch>=2.2", "transformers>=4.45"]
+
+[project.scripts]
+brink = "brink.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brink"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "NPY"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: needs rendering or reconstruction (minutes)"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
