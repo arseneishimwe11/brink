@@ -45,3 +45,13 @@ tests), not demo code.
 - Every few steps, give a one-line update. End each session with a plain-language
   report that a reader with no context can follow: what works, measured numbers,
   what failed, and what comes next.
+
+## Commit messages
+- Write like a human developer: a short, plain summary of what changed and why.
+- Subject line: imperative mood, under 60 characters, no period.
+  Examples: "Add undercut detector with profile slicing",
+  "Fix scale estimate when tape marks are missing".
+- Add a body only when the reason isn't obvious: 1 to 3 short lines.
+- One commit per logical change. Summarize; don't list every file.
+- No em dashes, no double hyphens, no emojis, no bullet lists in the subject.
+- No trailers or footers: no Co-Authored-By, no "Generated with", no session links.
