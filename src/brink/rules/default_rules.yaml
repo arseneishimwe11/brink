@@ -1,0 +1,48 @@
+# Brink hazard rules.
+#
+# PROVISIONAL: these thresholds have NOT been reviewed by a mining or
+# geotechnical engineer. They are conservative placeholders so the engine has
+# something to apply. Do not rely on them for decisions until `provisional`
+# below is set to false by a named, qualified reviewer.
+#
+# Slope limits per material start from the maximum allowable slopes in
+# US OSHA 29 CFR 1926 Subpart P, Appendix B (excavations under 6 m deep):
+# stable rock 90 deg, Type A 53 deg, Type B 45 deg, Type C 34 deg.
+# They were written for trench excavations, not quarry faces or stockpiles.
+version: "0.1-provisional"
+provisional: true
+approved_by: null
+
+# Measurements are compared against the threshold after subtracting nothing:
+# a hazard is reported as soon as the measured value reaches `note`.
+# `warning` and `danger` raise the severity.
+
+defaults:
+  undercut_depth_m: {note: 0.10, warning: 0.20, danger: 0.50}
+  overhang_depth_m: {note: 0.10, warning: 0.20, danger: 0.50}
+  crest_crack: {severity: warning}
+  water_at_toe: {severity: warning}
+  # Height above which an over-steep face is raised one severity level.
+  high_face_m: 3.0
+  # Slack added to the slope limit before flagging, to absorb measurement error.
+  slope_margin_deg: 3.0
+
+materials:
+  unknown:
+    description: "Material not stated. Treated like the weakest soil class."
+    max_slope_deg: 34
+  dry_sand:
+    description: "Dry or loose sand and gravel (OSHA Type C)."
+    max_slope_deg: 34
+  damp_soil:
+    description: "Damp granular or previously disturbed soil (OSHA Type B)."
+    max_slope_deg: 45
+  clay:
+    description: "Stiff cohesive soil (OSHA Type A)."
+    max_slope_deg: 53
+  weathered_rock:
+    description: "Weathered or fractured rock. No recognised standard value; placeholder."
+    max_slope_deg: 63
+  hard_rock:
+    description: "Stable rock (OSHA: vertical permitted)."
+    max_slope_deg: 90
