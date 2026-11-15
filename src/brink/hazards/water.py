@@ -36,7 +36,7 @@ class WaterRegion:
 
 def detect_water(
     cloud: PointCloud, face: Face, segment: FaceSegment, profiles: FaceProfiles,
-    frames: FrameSet, voxel: float, params: HazardParams,
+    frames: FrameSet, voxel: float, params: HazardParams, debug: dict | None = None,
 ) -> list[WaterRegion]:
     if len(profiles.slices) < 3:
         return []
@@ -74,10 +74,7 @@ def detect_water(
     use = inside & (ti >= 0) & (ti < nt) & near_floor
     filled = np.zeros((ns, nt), dtype=bool)
     filled[si[use], ti[use].astype(int)] = True
-    # A gap counts only if it is enclosed by reconstructed floor.
     closed = cv2.morphologyEx(filled.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)) > 0
-    enclosed = _fill_holes(closed)
-    gap = enclosed & ~closed
 
     # Image evidence for every enclosed cell, sampled on the floor plane.
     gs, gt = np.meshgrid(np.arange(ns), np.arange(nt), indexing="ij")
@@ -89,10 +86,16 @@ def detect_water(
     values, texture, seen = [], [], []
     for k, gray in enumerate(frames.gray):
         level = float(np.median(gray)) + 1e-3
-        smooth = cv2.GaussianBlur(gray, (0, 0), 2.0) / level
-        tex = local_std(cv2.GaussianBlur(gray, (0, 0), 1.0), 9) / level
-        v, valid = frames.sample(k, smooth, centres)
-        x, _ = frames.sample(k, tex, centres)
+        # Brightness is compared after heavy blurring: the assumed floor height
+        # is never exact, and at a shallow viewing angle a small height error
+        # shifts where a cell lands in the image. Blurring removes the soil's
+        # own texture from that comparison and leaves what water changes, the
+        # broad brightness of what it reflects.
+        broad = cv2.GaussianBlur(gray, (0, 0), 5.0)
+        fine = cv2.GaussianBlur(gray, (0, 0), 1.0)
+        contrast = local_std(fine, 9) / (cv2.blur(fine, (9, 9)) + 4.0)  # independent of light and shadow
+        v, valid = frames.sample(k, broad / level, centres)
+        x, _ = frames.sample(k, contrast, centres)
         # Only views from the open side, looking down onto the floor.
         cam_t = frames.centres[k] @ segment.t_dir
         valid &= cam_t < (centres @ segment.t_dir) - 0.3
@@ -106,10 +109,16 @@ def detect_water(
         brightness = np.nanmean(values, axis=0)
         change = np.nanstd(values, axis=0)
         smoothness = np.nanmean(texture, axis=0)
-    enough = (views >= 3).reshape(ns, nt)
+    # Cells at the fringe of what the cameras covered are seen by few frames
+    # and are not judged.
+    enough = (views >= max(4, 0.5 * views.max())).reshape(ns, nt)
     brightness, change, smoothness = (a.reshape(ns, nt) for a in (brightness, change, smoothness))
 
-    dry = enclosed & closed & enough  # reference: floor that did reconstruct
+    # A gap is floor that the cameras looked at but that did not reconstruct.
+    # (A puddle against the toe is not ringed by floor, so being enclosed
+    # cannot be required.)
+    gap = enough & ~closed
+    dry = closed & enough  # reference: floor that did reconstruct
     if dry.sum() < 20:
         return []
 
@@ -120,27 +129,37 @@ def detect_water(
         return (field - med) / spread
 
     z_change, z_bright, z_smooth = sigmas(change), sigmas(brightness), -sigmas(smoothness)
-    odd = np.maximum(z_change, np.minimum(np.abs(z_bright), z_smooth))
-    wet = gap & enough & (odd >= params.water_image_sigmas)
-    wet = cv2.morphologyEx(wet.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)) > 0
-
+    odd = np.maximum(z_change, np.abs(z_bright))
+    wet = cv2.morphologyEx(gap.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
+    if debug is not None:
+        debug.update(filled=filled, gap=gap, odd=odd, wet=wet, z_change=z_change,
+                     z_bright=z_bright, z_smooth=z_smooth, views=views.reshape(ns, nt), cell=cell)
+    # Each gap is judged as a whole. Shadow and damp soil still have texture
+    # and reconstruct, so they never become gaps; a gap whose overall
+    # brightness differs from the dry floor, or changes as the camera moves,
+    # is a reflecting surface.
     regions = []
     labels, count = components(wet)
+    ring_kernel = np.ones((7, 7), np.uint8)
     for c in range(1, count + 1):
         m = labels == c
         area = float(m.sum() * cell * cell)
-        if area < params.water_min_area:
+        if area < params.water_min_area or m.sum() < params.water_min_cells:
+            continue
+        # A missing patch bigger than half the floor that did reconstruct says
+        # the floor was modelled badly, not that it is under water.
+        if m.sum() > 0.5 * dry.sum():
+            continue
+        # A puddle sits in floor that did reconstruct. A patch surrounded by
+        # more missing floor is just ground too far or too oblique to model.
+        ring = (cv2.dilate(m.astype(np.uint8), ring_kernel) > 0) & ~m & enough
+        if ring.sum() == 0 or closed[ring].mean() < params.water_min_surround:
+            continue
+        score = float(max(np.nanmedian(z_change[m]), abs(np.nanmedian(z_bright[m]))))
+        if score < params.water_image_sigmas:
             continue
         where = m.ravel()
         centre = centres[where].mean(0)
         extent = float((gs[m].max() - gs[m].min() + 1) * cell)
-        regions.append(WaterRegion(centre, extent, area, float(gap[m].mean()), float(np.nanmedian(odd[m])), int(m.sum())))
+        regions.append(WaterRegion(centre, extent, area, float(gap[m].mean()), score, int(m.sum())))
     return regions
-
-
-def _fill_holes(mask: NDArray[np.bool_]) -> NDArray[np.bool_]:
-    """Mask with every hole that is not connected to the border filled in."""
-    padded = np.pad(mask, 1).astype(np.uint8)
-    flood = padded.copy()
-    cv2.floodFill(flood, None, (0, 0), 2)
-    return (flood != 2)[1:-1, 1:-1]

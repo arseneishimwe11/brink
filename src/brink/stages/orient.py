@@ -75,7 +75,7 @@ def _floor_normal(cloud: PointCloud, up_guess: NDArray) -> tuple[NDArray, float]
     extent = np.linalg.norm(np.percentile(pts, 95, axis=0) - np.percentile(pts, 5, axis=0))
     remaining = pts
     best = None
-    for _ in range(4):
+    for _ in range(6):
         if len(remaining) < 300:
             break
         pcd = o3d.geometry.PointCloud()
@@ -88,7 +88,9 @@ def _floor_normal(cloud: PointCloud, up_guess: NDArray) -> tuple[NDArray, float]
         mask = np.ones(len(remaining), dtype=bool)
         mask[inliers] = False
         remaining = remaining[mask]
-    if best is None or best[1] < 0.04 * len(pts):
+    # In front of a tall face only a narrow strip of floor is in view, so the
+    # floor may be a small share of the points and still be the right plane.
+    if best is None or best[1] < max(300, 0.008 * len(pts)):
         return None
     return best[0], best[1] / len(pts)
 
@@ -113,7 +115,7 @@ def gravity_from_scene(sfm: SfMResult, cloud: PointCloud) -> GravityEstimate:
     else:
         scatter = scatter + 0.15 * (np.eye(3) - np.outer(up_guess, up_guess))
         prior = up_guess
-        uncertainty = 6.0
+        uncertainty = 8.0  # no floor in view: only the way the phone was held is left
     values, vectors = np.linalg.eigh(scatter)
     up = vectors[:, 0]
     up = up if up @ prior > 0 else -up

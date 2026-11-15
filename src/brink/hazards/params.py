@@ -50,6 +50,8 @@ class HazardParams(BaseModel):
     water_cell_voxels: float = 2.5
     water_image_sigmas: float = 3.0  # how unlike dry floor a gap must look
     water_min_area: float = 0.06  # square metres
+    water_min_cells: int = 12
+    water_min_surround: float = 0.6  # share of the floor around a patch that must be reconstructed
 
     # -- crest cracks
     crack_cell_voxels: float = 1.0

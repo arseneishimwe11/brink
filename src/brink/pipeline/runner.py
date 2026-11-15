@@ -215,6 +215,15 @@ def run_pipeline(
     notes = add_image_hazards(geometry, image_set, rules, config.hazards, metric=recon.scale.is_metric)
     timings["hazards"] = time.perf_counter() - start
     recon.success = True
+    if gravity.source != "sensor":
+        notes.insert(0, (
+            "No motion-sensor data came with this video, so the direction of 'up' was estimated from the footage "
+            f"(to about {gravity.uncertainty_deg:.0f} degrees). Slope angles carry that error, and assume the floor is level."
+        ))
+    if recon.scale.source == "camera_height":
+        notes.append(
+            "Sizes assume the phone was held about 1.35 m above the ground. Lengths and heights may be off by 10 to 15 percent."
+        )
     result = finish(geometry, sfm=sfm, frames=frames, rotation=rotation, scale=recon.scale.factor)
     result.report.limitations = notes + result.report.limitations
     return result
