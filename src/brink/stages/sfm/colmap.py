@@ -29,7 +29,22 @@ class ColmapSolver:
         self.threads = threads
 
     def solve(self, image_dir: Path, names: list[str], work_dir: Path) -> SfMResult | None:
-        work_dir = Path(work_dir)
+        """Solve the cameras; if few frames can be placed, retry looking harder for features.
+
+        Dim, hazy or blurred footage has little contrast, and the standard
+        detector then finds almost nothing. A lower detection threshold fixes
+        that, at the cost of weaker features, so it is only used as a fallback.
+        """
+        first = self._attempt(image_dir, names, Path(work_dir), peak_threshold=None)
+        if first is not None and first.registered >= 0.6 * len(names):
+            return first
+        second = self._attempt(image_dir, names, Path(str(work_dir) + "_sensitive"), peak_threshold=0.0015)
+        if second is not None:
+            second.method += "+sensitive"
+        candidates = [r for r in (first, second) if r is not None]
+        return max(candidates, key=lambda r: r.registered) if candidates else None
+
+    def _attempt(self, image_dir: Path, names: list[str], work_dir: Path, peak_threshold: float | None) -> SfMResult | None:
         if work_dir.exists():
             shutil.rmtree(work_dir)
         work_dir.mkdir(parents=True)
@@ -43,6 +58,8 @@ class ColmapSolver:
             raise ValueError(f"unsupported feature type {self.features!r}")
         extraction.type = pycolmap.FeatureExtractorType.SIFT
         extraction.sift.max_num_features = self.max_features
+        if peak_threshold is not None:
+            extraction.sift.peak_threshold = peak_threshold
         matching.type = pycolmap.FeatureMatcherType.SIFT_BRUTEFORCE
         reader = pycolmap.ImageReaderOptions()
         reader.camera_model = "SIMPLE_RADIAL"
