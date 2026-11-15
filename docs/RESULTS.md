@@ -14,10 +14,10 @@ How to read these tables:
 
 ## Full tier (video in, hazards out), dev split
 
-Command: `brink bench full --split dev --count 4 --image-count 0 --variants sensor,scene`  
-Run: 2026-11-15 16:38 UTC, code at commit `27ad498`
+Command: `brink bench full --split dev --count 24 --image-count 10 --variants sensor,scene`  
+Run: 2026-11-15 17:55 UTC, code at commit `6eed00f`
 
-4 rendered handheld videos (4 with geometric hazards or controls, 0 with cracks or puddles).
+34 rendered handheld videos (24 with geometric hazards or controls, 10 with cracks or puddles).
 Each scene is tipped 0 to 4 degrees off true gravity. Variants: `sensor` reads gravity from the simulated
 phone sensor file, `scene` guesses it from the footage; others swap one stage.
 
@@ -25,22 +25,22 @@ Reconstruction:
 
 | Variant | Captures reconstructed | Frames placed, median | Camera position error, median | Gravity error, median | Gravity error, 90th pct | Scale error, median | Scale error, 90th pct | Time per capture, median | 90th pct | Slowest stage |
 |---|---|---|---|---|---|---|---|---|---|---|
-| sensor | 4/4 | 100% | 0.6 mm | 0.91 deg | 1.11 deg | 7.2% | 12.1% | 138 s | 159 s | sfm (77%) |
-| scene | 4/4 | 100% | 0.6 mm | 1.42 deg | 2.17 deg | 5.7% | 10.0% | 5 s | 8 s | hazards (92%) |
+| sensor | 33/34 | 100% | 0.7 mm | 0.60 deg | 1.08 deg | 6.9% | 15.9% | 97 s | 153 s | sfm (72%) |
+| scene | 33/34 | 100% | 0.7 mm | 1.62 deg | 4.52 deg | 8.3% | 12.0% | 3 s | 5 s | hazards (86%) |
 
 Undercuts and overhangs:
 
 | Variant | Captures | Undercut >= 20 cm flagged | 20-30 cm | 30-50 cm | >= 50 cm | Under 20 cm flagged | Controls with a false alarm | False alarms per capture | Depth error, median | Depth error, 90th pct | Depth bias |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| sensor | 4/4 | 1/2 (50%, 9-91) | 1/2 (50%, 9-91) | none in set | none in set | 1/1 (100%, 21-100) | 1/1 | 0.75 | 0.050 m | 0.050 m | +0.050 m |
-| scene | 4/4 | 1/2 (50%, 9-91) | 1/2 (50%, 9-91) | none in set | none in set | 1/1 (100%, 21-100) | 1/1 | 1.00 | 0.039 m | 0.039 m | +0.039 m |
+| sensor | 23/24 | 13/13 (100%, 77-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 3/3 (100%, 44-100) | 2/2 (100%, 34-100) | 1/7 | 0.04 | 0.033 m | 0.137 m | +0.017 m |
+| scene | 23/24 | 13/13 (100%, 77-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 3/3 (100%, 44-100) | 2/2 (100%, 34-100) | 0/7 | 0.00 | 0.044 m | 0.149 m | -0.008 m |
 
 Slope and height of the test face:
 
 | Variant | Faces measured | Slope error, median | 90th pct | Worst | Within 5 deg | Height error, median | Height error, 90th pct | Over-steep call correct | Time per capture, median |
 |---|---|---|---|---|---|---|---|---|---|
-| sensor | 4/4 | 0.36 deg | 0.73 deg | 0.81 deg | 4/4 | 11.0% | 14.2% | 4/4 | 138.1 s |
-| scene | 4/4 | 0.86 deg | 1.48 deg | 1.54 deg | 4/4 | 7.2% | 13.8% | 4/4 | 5.3 s |
+| sensor | 23/23 | 0.46 deg | 0.83 deg | 1.45 deg | 23/23 | 7.5% | 17.5% | 22/22 | 97.6 s |
+| scene | 23/23 | 1.14 deg | 4.39 deg | 8.41 deg | 21/23 | 5.0% | 28.9% | 22/22 | 2.9 s |
 
 
 ## Geometry tier, test split
