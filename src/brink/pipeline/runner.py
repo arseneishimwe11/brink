@@ -27,6 +27,7 @@ from brink.rules import Rules, load_rules
 from brink.stages import orient
 from brink.stages.dense import make_dense
 from brink.stages.frames import FrameSelectionParams, SelectedFrames, load_selected, select_frames
+from brink.stages.masking import MaskingParams, write_masks
 from brink.stages.sfm import SfMResult, make_solver
 
 LIMITATIONS = [
@@ -40,6 +41,7 @@ class PipelineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     frames: FrameSelectionParams = Field(default_factory=FrameSelectionParams)
+    masking: MaskingParams = Field(default_factory=MaskingParams)
     sfm: str = "colmap_sift"
     dense: str = "stereo"
     gravity: str = "auto"  # "auto": sensor file if present, else scene; or force "sensor" / "scene"
@@ -141,14 +143,25 @@ def run_pipeline(
     timings["frames"] = time.perf_counter() - start
     recon.frames_selected = len(frames.names)
 
+    # -- masks -------------------------------------------------------------
+    start = time.perf_counter()
+    masks_dir: Path | None = None
+    masks_key = _key(frames_key, config.masking.model_dump_json())
+    if config.masking.enabled:
+        masks_dir = work_dir / "masks"
+        if not _fresh(masks_dir / "key", masks_key):
+            write_masks(frames_dir, frames.names, masks_dir, config.masking)
+            (masks_dir / "key").write_text(masks_key)
+    timings["masking"] = time.perf_counter() - start
+
     # -- cameras -----------------------------------------------------------
     start = time.perf_counter()
-    sfm_key = _key(frames_key, config.sfm)
+    sfm_key = _key(masks_key, config.sfm)
     sfm_file = work_dir / f"sfm_{config.sfm}.npz"
     if _fresh(sfm_file.with_suffix(".key"), sfm_key):
         sfm = SfMResult.load(sfm_file) if sfm_file.exists() else None
     else:
-        sfm = make_solver(config.sfm, config.device).solve(frames_dir, frames.names, work_dir / f"sfm_{config.sfm}")
+        sfm = make_solver(config.sfm, config.device).solve(frames_dir, frames.names, work_dir / f"sfm_{config.sfm}", masks_dir)
         if sfm is not None:
             sfm.save(sfm_file)
         elif sfm_file.exists():
@@ -174,7 +187,7 @@ def run_pipeline(
     if _fresh(dense_file.with_suffix(".key"), dense_key) and dense_file.exists():
         cloud = PointCloud.load_npz(dense_file)
     else:
-        cloud = make_dense(config.dense, config.device).reconstruct(sfm, frames_dir)
+        cloud = make_dense(config.dense, config.device).reconstruct(sfm, frames_dir, masks_dir)
         if len(cloud):
             ranges = np.linalg.norm(sfm.points - sfm.positions.mean(0), axis=1)
             voxel = 0.003 * float(np.median(ranges))

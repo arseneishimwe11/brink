@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 
 from brink.geometry import PointCloud
 from brink.stages.dense.fusion import DepthView, fuse
+from brink.stages.masking import mask_name
 from brink.stages.sfm.base import SfMResult
 
 
@@ -154,7 +155,7 @@ class StereoDense:
         for i, name in enumerate(sfm.names):
             bgr = cv2.imread(str(Path(image_dir) / name))
             images[i] = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            mask_path = None if masks_dir is None else Path(masks_dir) / (Path(name).stem + ".png")
+            mask_path = None if masks_dir is None else Path(masks_dir) / mask_name(name)
             masks[i] = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) if mask_path and mask_path.exists() else None
 
         views: list[DepthView] = []

@@ -68,7 +68,7 @@ class SfMResult:
 class SfMSolver(Protocol):
     name: str
 
-    def solve(self, image_dir: Path, names: list[str], work_dir: Path) -> SfMResult | None:
+    def solve(self, image_dir: Path, names: list[str], work_dir: Path, masks_dir: Path | None = None) -> SfMResult | None:
         """Return solved cameras, or None when no usable reconstruction was found."""
         ...
 

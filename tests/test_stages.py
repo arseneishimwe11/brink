@@ -65,3 +65,18 @@ def test_floaters_are_removed():
     clump = rng.normal([2, 2, 1.5], 0.02, (40, 3))
     cleaned = PointCloud(np.vstack([surface, clump])).without_floaters(0.05)
     assert len(cleaned) == 20000
+
+
+def test_mask_drops_sky_and_green_but_keeps_soil():
+    from brink.stages.masking import MaskingParams, ground_mask
+
+    rng = np.random.default_rng(3)
+    image = np.zeros((120, 160, 3), np.uint8)
+    image[:40] = (215, 205, 195)  # pale sky (BGR), smooth
+    soil = np.array([60, 95, 140]) + rng.integers(-35, 35, (80, 160, 1))  # textured brown
+    image[40:] = np.clip(soil, 0, 255)
+    image[80:100, 20:60] = (40, 150, 50)  # a green bush
+    mask = ground_mask(image, MaskingParams(grow_px=2))
+    assert (mask[:30] == 0).mean() > 0.95  # sky ignored
+    assert (mask[85:95, 25:55] == 0).mean() > 0.95  # vegetation ignored
+    assert (mask[50:75, 80:150] == 255).mean() > 0.95  # soil kept
