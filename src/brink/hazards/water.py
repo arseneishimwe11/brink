@@ -9,6 +9,7 @@ sky). Either clue alone is common on dry ground, so both are required.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import cv2
@@ -100,7 +101,8 @@ def detect_water(
         seen.append(valid)
     values, texture = np.array(values), np.array(texture)
     views = np.array(seen).sum(0)
-    with np.errstate(invalid="ignore"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # cells no frame saw are all-NaN
         brightness = np.nanmean(values, axis=0)
         change = np.nanstd(values, axis=0)
         smoothness = np.nanmean(texture, axis=0)

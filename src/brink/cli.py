@@ -123,5 +123,20 @@ def bench_full(
     typer.echo(body)
 
 
+@bench_app.command("all")
+def bench_all(
+    geometry_count: int = typer.Option(60, help="Scenes in the geometry tier."),
+    count: int = typer.Option(30, help="Videos with geometric hazards or controls in the full tier."),
+    image_count: int = typer.Option(10, help="Videos with cracks or puddles in the full tier."),
+    variants: str = typer.Option("sensor,scene"),
+    workers: int = typer.Option(2),
+) -> None:
+    """Rerun the whole benchmark on the frozen test split and rewrite docs/RESULTS.md."""
+    bench_geometry(split="test", count=geometry_count, methods="profile,normals", conditions="ideal,typical,poor",
+                   workers=4, log="", notes="")
+    bench_full(split="test", count=count, image_count=image_count, variants=variants, workers=workers, log="", notes="")
+    typer.echo(f"Results written to {RESULTS}")
+
+
 if __name__ == "__main__":
     app()
