@@ -26,6 +26,18 @@ NAN = float("nan")
 
 
 @dataclass
+class Reading:
+    """Deepest place where visible ground lies behind and below a lip of the face."""
+
+    depth: float = 0.0  # <= 0 means none found
+    lip_z: float = NAN
+    lip_t: float = NAN
+    hollow_z: float = NAN
+    hollow_t: float = NAN
+    back_seen: bool = False
+
+
+@dataclass
 class SliceProfile:
     s_center: float
     z_floor: float
@@ -36,17 +48,18 @@ class SliceProfile:
     n_front: NDArray[np.int64]
     back_is_wall: NDArray[np.bool_]
     slope_deg: float = NAN
-    # Best overhang found in this slice (depth <= 0 means none).
-    depth: float = 0.0
-    lip_z: float = NAN
-    lip_t: float = NAN
-    hollow_z: float = NAN
-    hollow_t: float = NAN
-    hollow_back_seen: bool = False
+    front_sigma: float = NAN  # scatter of the face surface about its fitted line
+    # A hollow whose lip sits low on the face is an undercut; a lip high on the
+    # face is an overhang. They are kept apart so one cannot hide the other.
+    undercut: Reading = field(default_factory=Reading)
+    overhang: Reading = field(default_factory=Reading)
 
     @property
     def height(self) -> float:
         return self.z_crest - self.z_floor
+
+    def reading(self, kind: str) -> Reading:
+        return self.undercut if kind == "undercut" else self.overhang
 
 
 @dataclass
@@ -194,10 +207,9 @@ def compute_profiles(
             _measure_overhang(col, dz, params, cam_t, cam_z, min_front=1)
             columns.append(col)
         if len(columns) >= 2:
-            columns.sort(key=lambda col: col.depth)
-            mid = columns[len(columns) // 2]
-            prof.depth, prof.lip_z, prof.lip_t = mid.depth, mid.lip_z, mid.lip_t
-            prof.hollow_z, prof.hollow_t, prof.hollow_back_seen = mid.hollow_z, mid.hollow_t, mid.hollow_back_seen
+            for kind in ("undercut", "overhang"):
+                ranked = sorted(columns, key=lambda col, kind=kind: col.reading(kind).depth)
+                setattr(prof, kind, ranked[len(ranked) // 2].reading(kind))
         _measure_slope(prof, params)
         out.slices.append(prof)
     return out
@@ -227,9 +239,14 @@ def _bin_profile(
         if robust and len(tw) >= 3:
             t_front[k] = _kth(tw, 0.05, largest=False)
         elif not robust and len(tw) >= 1:
-            t_front[k] = tw.min()
+            # With a handful of points, the second most extreme one is a much
+            # steadier estimate of the surface than the single extreme.
+            t_front[k] = np.partition(tw, 1)[1] if len(tw) >= 4 else tw.min()
         group = _front_group(np.sort(tb), params.group_gap, skip_stray=robust)
-        t_back[k] = _kth(group, 0.02, largest=True) if robust and len(group) >= 3 else group[-1]
+        if robust and len(group) >= 3:
+            t_back[k] = _kth(group, 0.02, largest=True)
+        else:
+            t_back[k] = group[-2] if len(group) >= 4 else group[-1]
         near = np.abs(tb - t_back[k]) < 2.5 * voxel
         back_wall[k] = (~fl[idx][near]).mean() >= 0.5
     return t_front, t_back, n_front, back_wall
@@ -245,49 +262,52 @@ def _measure_overhang(
     min_drop = max(params.min_hollow_bins * dz, params.min_hollow_height)
     usable = (prof.n_front >= min_front) & (prof.z >= prof.z_floor + clearance) & np.isfinite(prof.t_front)
     front = np.where(usable, prof.t_front, np.inf)
-    # Suffix minimum: the furthest-forward face surface at or above each bin.
-    lip_t = np.full(n, np.inf)
-    lip_k = np.full(n, -1)
-    best, best_k = np.inf, -1
-    for k in range(n - 1, -1, -1):
-        if front[k] < best:
-            best, best_k = front[k], k
-        lip_t[k], lip_k[k] = best, best_k
+    # Furthest-forward face surface at or above each bin.
+    reach = np.minimum.accumulate(front[::-1])[::-1]
 
     candidates = []
     for k1 in range(n - gap):
-        k2 = lip_k[k1 + gap]
-        if k2 < 0 or not np.isfinite(prof.t_back[k1]):
+        if not np.isfinite(prof.t_back[k1]) or not np.isfinite(reach[k1 + gap]):
             continue
-        depth = prof.t_back[k1] - lip_t[k1 + gap]
-        if depth > 0:
-            candidates.append((depth, k1, k2))
+        depth = prof.t_back[k1] - reach[k1 + gap]
+        if depth <= 0:
+            continue
+        # The lip is the lowest place above the hollow where the face comes
+        # (nearly) that far forward. Taking the single most forward bin instead
+        # would put the lip at a random height on a vertical face.
+        ahead = np.flatnonzero(front[k1 + gap :] <= reach[k1 + gap] + 0.25 * depth)
+        candidates.append((depth, k1, k1 + gap + int(ahead[0])))
+    found = {"undercut": False, "overhang": False}
     for depth, k1, k2 in sorted(candidates, reverse=True):
+        p_t, p_z, l_t, l_z = prof.t_back[k1], prof.z[k1], prof.t_front[k2], prof.z[k2]
+        kind = "undercut" if (l_z - prof.z_floor) <= params.undercut_max_lip_fraction * prof.height else "overhang"
+        if found[kind]:
+            continue
         # The hollow only counts if it has real height and some camera looked in
         # under the lip. Ground that merely dips behind a ridge is shallow and
         # is seen from over the top instead.
-        p_t, p_z, l_t, l_z = prof.t_back[k1], prof.z[k1], prof.t_front[k2], prof.z[k2]
         drop = l_z - p_z
         if drop < min_drop:
             continue
         ok = cam_t < min(l_t, p_t) - 1e-6  # cameras standing in front of the lip
         ray_z = cam_z[ok] + (p_z - cam_z[ok]) * (l_t - cam_t[ok]) / (p_t - cam_t[ok])
         if len(cam_t) == 0 or np.any(ray_z < l_z + params.ray_tolerance * drop):
-            prof.depth = float(depth)
-            prof.lip_z, prof.lip_t = float(l_z), float(l_t)
-            prof.hollow_z, prof.hollow_t = float(p_z), float(p_t)
-            prof.hollow_back_seen = bool(prof.back_is_wall[k1])
-            return
+            setattr(prof, kind, Reading(float(depth), float(l_z), float(l_t), float(p_z), float(p_t), bool(prof.back_is_wall[k1])))
+            found[kind] = True
+            if all(found.values()):
+                return
 
 
 def _measure_slope(prof: SliceProfile, params: HazardParams) -> None:
     h = prof.height
     lo = prof.z_floor + 0.25 * h
-    if prof.depth >= params.min_depth and np.isfinite(prof.lip_z):
-        lo = max(lo, prof.lip_z)
+    if prof.undercut.depth >= params.min_depth and np.isfinite(prof.undercut.lip_z):
+        lo = max(lo, prof.undercut.lip_z)
     hi = prof.z_crest - 0.1 * h
     use = (prof.z >= lo) & (prof.z <= hi) & (prof.n_front >= 3) & np.isfinite(prof.t_front)
     if use.sum() < 4:
         return
     b = _theil_sen(prof.z[use], prof.t_front[use])
     prof.slope_deg = float(np.degrees(np.arctan2(1.0, b)))
+    resid = prof.t_front[use] - b * prof.z[use]
+    prof.front_sigma = float(1.4826 * np.median(np.abs(resid - np.median(resid))))

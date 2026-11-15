@@ -24,6 +24,7 @@ from brink.hazards.profiles import FaceProfiles
 
 @dataclass
 class OverhangRegion:
+    kind: str  # "undercut" (lip low on the face) or "overhang" (lip high)
     s_min: float
     s_max: float
     depth: float
@@ -55,10 +56,14 @@ class ProfileDetector:
     name = "profile"
 
     def detect(self, cloud, slope, profiles, voxel, params) -> list[OverhangRegion]:
-        slices = profiles.slices
-        if not slices:
+        if not profiles.slices:
             return []
-        raw = np.array([p.depth for p in slices])
+        return self._detect_kind("undercut", profiles, voxel, params) + self._detect_kind("overhang", profiles, voxel, params)
+
+    def _detect_kind(self, kind: str, profiles: FaceProfiles, voxel: float, params: HazardParams) -> list[OverhangRegion]:
+        slices = profiles.slices
+        readings = [p.reading(kind) for p in slices]
+        raw = np.array([r.depth for r in readings])
         # What a plain face with this slope would read in each slice: slightly
         # negative for a normal slope, the full lean for a face that tips out.
         slopes = np.array([p.slope_deg for p in slices])
@@ -67,13 +72,21 @@ class ProfileDetector:
         heights = np.array([p.height for p in slices])
         expected = np.where(lean > 0, heights * lean, profiles.bin_height * lean)
         excess = raw - expected
-        # Noise and roughness add a constant on top; estimate it from the face.
-        floor = float(np.median(excess))
-        mad = max(float(1.4826 * np.median(np.abs(excess - floor))), 0.5 * voxel)
-        local = excess - max(0.0, floor)
+        # Noise and roughness add a constant on top. Estimate it from the
+        # quietest part of the face (an undercut may span half of it, so the
+        # median would swallow the hazard), and never let it exceed what the
+        # scatter of the face surface itself can explain.
+        floor = float(np.percentile(excess, 20))
+        quiet = excess[excess <= np.median(excess)]
+        mad = max(float(1.4826 * np.median(np.abs(quiet - floor))), 0.5 * voxel)
+        sigmas = np.array([p.front_sigma for p in slices])
+        scatter = float(np.nanmedian(sigmas)) if np.isfinite(sigmas).any() else voxel
+        bias = float(np.clip(floor, 0.0, 2 * voxel + 3 * scatter))
+        local = excess - bias
         flagged = (local >= params.min_depth) & (excess >= floor + params.noise_sigmas * mad)
         # Reported depth is the total overhang at that spot, lean included.
         depths = local + np.maximum(expected, 0.0)
+
         regions: list[OverhangRegion] = []
         i = 0
         while i < len(slices):
@@ -86,21 +99,22 @@ class ProfileDetector:
                 flagged[j + 1] or (j + 2 < len(slices) and flagged[j + 2])
             ) and slices[j + 1].s_center - slices[j].s_center < 2.5 * profiles.slice_width:
                 j += 1
-            run = [p for p, f in zip(slices[i : j + 1], flagged[i : j + 1], strict=True) if f]
+            run = [r for r, f in zip(readings[i : j + 1], flagged[i : j + 1], strict=True) if f]
             width = slices[j].s_center - slices[i].s_center + profiles.slice_width
             if width >= params.min_region_width and len(run) >= 2:
                 d = depths[i : j + 1][flagged[i : j + 1]]
                 regions.append(
                     OverhangRegion(
+                        kind=kind,
                         s_min=slices[i].s_center - profiles.slice_width / 2,
                         s_max=slices[j].s_center + profiles.slice_width / 2,
                         depth=float(np.percentile(d, 80)),
                         depth_spread=float(1.4826 * np.median(np.abs(d - np.median(d)))),
-                        lip_z=float(np.median([p.lip_z for p in run])),
-                        hollow_z=float(np.median([p.hollow_z for p in run])),
-                        t_center=float(np.median([0.5 * (p.lip_t + p.hollow_t) for p in run])),
+                        lip_z=float(np.median([r.lip_z for r in run])),
+                        hollow_z=float(np.median([r.hollow_z for r in run])),
+                        t_center=float(np.median([0.5 * (r.lip_t + r.hollow_t) for r in run])),
                         support=len(run),
-                        back_seen=float(np.mean([p.hollow_back_seen for p in run])) >= 0.5,
+                        back_seen=float(np.mean([r.back_seen for r in run])) >= 0.5,
                     )
                 )
             i = j + 1
@@ -142,13 +156,18 @@ class NormalsDetector:
             width = float(np.percentile(ms, 98) - np.percentile(ms, 2))
             if depth < params.min_depth or width < params.min_region_width:
                 continue
+            lip = float(np.percentile(mz, 95))
+            base = min(p.z_floor for p in profiles.slices)
+            top = max(p.z_crest for p in profiles.slices)
+            low = (lip - base) <= params.undercut_max_lip_fraction * (top - base)
             regions.append(
                 OverhangRegion(
+                    kind="undercut" if low else "overhang",
                     s_min=float(np.percentile(ms, 2)),
                     s_max=float(np.percentile(ms, 98)),
                     depth=depth,
                     depth_spread=float("nan"),
-                    lip_z=float(np.percentile(mz, 95)),
+                    lip_z=lip,
                     hollow_z=float(np.percentile(mz, 5)),
                     t_center=float(np.median(mt)),
                     support=len(m),

@@ -123,13 +123,12 @@ def analyze_geometry(
         result.profiles.append(prof)
 
         # Typical overhang reading on stretches with no hazard: the noise floor.
-        depths = np.array([p.depth for p in prof.slices])
-        noise = float(np.median(depths)) + 2 * voxel
+        depths = np.array([p.undercut.depth for p in prof.slices])
+        noise = max(float(np.percentile(depths, 20)), 0.0) + 2 * voxel
         s_all, t_all = xyz @ seg.s_dir, xyz @ seg.t_dir
 
         for region in detector.detect(clean, slope, prof, voxel, params):
-            lip_fraction = (region.lip_z - face.toe_z) / max(face.height, 1e-6)
-            htype = HazardType.UNDERCUT if lip_fraction <= params.undercut_max_lip_fraction else HazardType.OVERHANG
+            htype = HazardType.UNDERCUT if region.kind == "undercut" else HazardType.OVERHANG
             severity = rules.judge_depth(htype, region.depth) if metric else Severity.WARNING
             if severity is None:
                 continue
