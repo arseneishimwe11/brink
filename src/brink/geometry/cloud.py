@@ -61,6 +61,48 @@ class PointCloud:
         view = None if self.view is None else self.view.astype(np.float64) @ r.T
         return PointCloud(xyz, self.rgb, normals, cams, view)
 
+    def thinned(self, voxel: float) -> PointCloud:
+        """One averaged point per ``voxel`` cube. Colours and view vectors are averaged too."""
+        import open3d as o3d
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(self.xyz.astype(np.float64))
+        if self.rgb is not None:
+            pcd.colors = o3d.utility.Vector3dVector(self.rgb.astype(np.float64) / 255.0)
+        if self.view is not None:
+            pcd.normals = o3d.utility.Vector3dVector(self.view.astype(np.float64))
+        pcd = pcd.voxel_down_sample(voxel)
+        rgb = None if self.rgb is None else (np.asarray(pcd.colors) * 255).astype(np.uint8)
+        view = None
+        if self.view is not None:
+            view = np.asarray(pcd.normals)
+            view = view / (np.linalg.norm(view, axis=1, keepdims=True) + 1e-12)
+        return PointCloud(np.asarray(pcd.points), rgb, None, self.cameras, view)
+
+    def without_floaters(self, cell: float, min_share: float = 0.003, min_points: int = 300) -> PointCloud:
+        """Drop small clumps of points that are not attached to the main surfaces.
+
+        Stereo matching leaves stray clumps in mid-air, mostly where ground
+        meets sky. Points are binned into ``cell``-sized cubes; cubes that touch
+        form a clump, and clumps holding too few points are removed.
+        """
+        from scipy import ndimage
+
+        if len(self) == 0:
+            return self
+        lo = self.xyz.min(0)
+        span = self.xyz.max(0) - lo
+        cell = max(cell, float(span.max()) / 500.0)  # keep the grid a sane size
+        idx = np.floor((self.xyz - lo) / cell).astype(np.int64)
+        shape = idx.max(0) + 1
+        occupied = np.zeros(shape, dtype=bool)
+        occupied[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+        labels, count = ndimage.label(occupied, structure=np.ones((3, 3, 3), dtype=bool))
+        point_label = labels[idx[:, 0], idx[:, 1], idx[:, 2]]
+        sizes = np.bincount(point_label, minlength=count + 1)
+        keep = sizes[point_label] >= max(min_points, min_share * len(self))
+        return self.select(keep)
+
     # -- persistence -------------------------------------------------------
 
     def save_npz(self, path: str | Path) -> None:
