@@ -12,6 +12,37 @@ How to read these tables:
   controlled conditions, not what it will do at a real site.
 
 
+## Full tier (video in, hazards out), dev split
+
+Command: `brink bench full --split dev --count 4 --image-count 0 --variants sensor,scene`  
+Run: 2026-11-15 16:38 UTC, code at commit `27ad498`
+
+4 rendered handheld videos (4 with geometric hazards or controls, 0 with cracks or puddles).
+Each scene is tipped 0 to 4 degrees off true gravity. Variants: `sensor` reads gravity from the simulated
+phone sensor file, `scene` guesses it from the footage; others swap one stage.
+
+Reconstruction:
+
+| Variant | Captures reconstructed | Frames placed, median | Camera position error, median | Gravity error, median | Gravity error, 90th pct | Scale error, median | Scale error, 90th pct | Time per capture, median | 90th pct | Slowest stage |
+|---|---|---|---|---|---|---|---|---|---|---|
+| sensor | 4/4 | 100% | 0.6 mm | 0.91 deg | 1.11 deg | 7.2% | 12.1% | 138 s | 159 s | sfm (77%) |
+| scene | 4/4 | 100% | 0.6 mm | 1.42 deg | 2.17 deg | 5.7% | 10.0% | 5 s | 8 s | hazards (92%) |
+
+Undercuts and overhangs:
+
+| Variant | Captures | Undercut >= 20 cm flagged | 20-30 cm | 30-50 cm | >= 50 cm | Under 20 cm flagged | Controls with a false alarm | False alarms per capture | Depth error, median | Depth error, 90th pct | Depth bias |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| sensor | 4/4 | 1/2 (50%, 9-91) | 1/2 (50%, 9-91) | none in set | none in set | 1/1 (100%, 21-100) | 1/1 | 0.75 | 0.050 m | 0.050 m | +0.050 m |
+| scene | 4/4 | 1/2 (50%, 9-91) | 1/2 (50%, 9-91) | none in set | none in set | 1/1 (100%, 21-100) | 1/1 | 1.00 | 0.039 m | 0.039 m | +0.039 m |
+
+Slope and height of the test face:
+
+| Variant | Faces measured | Slope error, median | 90th pct | Worst | Within 5 deg | Height error, median | Height error, 90th pct | Over-steep call correct | Time per capture, median |
+|---|---|---|---|---|---|---|---|---|---|
+| sensor | 4/4 | 0.36 deg | 0.73 deg | 0.81 deg | 4/4 | 11.0% | 14.2% | 4/4 | 138.1 s |
+| scene | 4/4 | 0.86 deg | 1.48 deg | 1.54 deg | 4/4 | 7.2% | 13.8% | 4/4 | 5.3 s |
+
+
 ## Geometry tier, test split
 
 Command: `brink bench geometry --split test --count 60 --methods profile,normals --conditions ideal,typical,poor`  
@@ -46,8 +77,8 @@ Slope and height of the test face:
 
 ## Geometry tier, dev split
 
-Command: `brink bench geometry --split dev --count 40 --methods profile,normals --conditions ideal,typical,poor`  
-Run: 2026-11-14 00:46 UTC, code at commit `dabebeb`
+Command: `brink bench geometry --split dev --count 40 --methods profile --conditions ideal,typical,poor`  
+Run: 2026-11-15 16:51 UTC, code at commit `27ad498`
 
 40 synthetic scenes, hazard geometry run on sampled surfaces (no images).
 Cloud quality sets depth noise, holes, and the assumed error in gravity and scale:
@@ -57,20 +88,14 @@ Undercuts and overhangs:
 
 | Undercut method | Cloud quality | Captures | Undercut >= 20 cm flagged | 20-30 cm | 30-50 cm | >= 50 cm | Under 20 cm flagged | Controls with a false alarm | False alarms per capture | Depth error, median | Depth error, 90th pct | Depth bias |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| profile | ideal | 40/40 | 20/20 (100%, 84-100) | 10/10 (100%, 72-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.00 | 0.007 m | 0.030 m | +0.004 m |
-| normals | ideal | 40/40 | 7/20 (35%, 18-57) | 4/10 (40%, 17-69) | 0/6 (0%, 0-39) | 3/4 (75%, 30-95) | 0/4 (0%, 0-49) | 0/14 | 0.00 | 0.033 m | 0.075 m | -0.032 m |
-| profile | typical | 40/40 | 20/20 (100%, 84-100) | 10/10 (100%, 72-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.00 | 0.024 m | 0.084 m | +0.014 m |
-| normals | typical | 40/40 | 10/20 (50%, 30-70) | 7/10 (70%, 40-89) | 0/6 (0%, 0-39) | 3/4 (75%, 30-95) | 0/4 (0%, 0-49) | 0/14 | 0.05 | 0.042 m | 0.067 m | +0.014 m |
-| profile | poor | 40/40 | 19/20 (95%, 76-99) | 10/10 (100%, 72-100) | 5/6 (83%, 44-97) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.00 | 0.051 m | 0.084 m | +0.013 m |
-| normals | poor | 40/40 | 10/20 (50%, 30-70) | 7/10 (70%, 40-89) | 0/6 (0%, 0-39) | 3/4 (75%, 30-95) | 0/4 (0%, 0-49) | 0/14 | 0.20 | 0.079 m | 0.162 m | +0.022 m |
+| profile | ideal | 40/40 | 20/20 (100%, 84-100) | 10/10 (100%, 72-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.00 | 0.006 m | 0.021 m | +0.002 m |
+| profile | typical | 40/40 | 20/20 (100%, 84-100) | 10/10 (100%, 72-100) | 6/6 (100%, 61-100) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.00 | 0.029 m | 0.081 m | +0.018 m |
+| profile | poor | 40/40 | 19/20 (95%, 76-99) | 10/10 (100%, 72-100) | 5/6 (83%, 44-97) | 4/4 (100%, 51-100) | 4/4 (100%, 51-100) | 0/14 | 0.03 | 0.061 m | 0.172 m | +0.047 m |
 
 Slope and height of the test face:
 
 | Undercut method | Cloud quality | Faces measured | Slope error, median | 90th pct | Worst | Within 5 deg | Height error, median | Height error, 90th pct | Over-steep call correct | Time per capture, median |
 |---|---|---|---|---|---|---|---|---|---|---|
-| profile | ideal | 40/40 | 0.06 deg | 0.20 deg | 0.46 deg | 40/40 | 1.5% | 2.0% | 38/38 | 2.4 s |
-| normals | ideal | 40/40 | 0.06 deg | 0.20 deg | 0.46 deg | 40/40 | 1.5% | 2.0% | 38/38 | 2.4 s |
-| profile | typical | 40/40 | 0.63 deg | 1.01 deg | 1.39 deg | 40/40 | 5.3% | 6.8% | 38/38 | 2.4 s |
-| normals | typical | 40/40 | 0.63 deg | 1.01 deg | 1.39 deg | 40/40 | 5.3% | 6.8% | 38/38 | 2.5 s |
-| profile | poor | 40/40 | 2.20 deg | 2.92 deg | 3.13 deg | 40/40 | 12.3% | 15.7% | 38/38 | 1.2 s |
-| normals | poor | 40/40 | 2.20 deg | 2.92 deg | 3.13 deg | 40/40 | 12.3% | 15.7% | 38/38 | 1.2 s |
+| profile | ideal | 40/40 | 0.06 deg | 0.20 deg | 0.46 deg | 40/40 | 1.5% | 2.0% | 38/38 | 2.8 s |
+| profile | typical | 40/40 | 0.65 deg | 0.98 deg | 1.39 deg | 40/40 | 5.3% | 6.8% | 38/38 | 3.2 s |
+| profile | poor | 40/40 | 2.34 deg | 2.94 deg | 3.13 deg | 40/40 | 12.3% | 15.7% | 38/38 | 1.5 s |

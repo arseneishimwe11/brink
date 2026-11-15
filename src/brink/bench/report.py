@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from brink.bench.metrics import summarise
 
 RESULTS_HEADER = """# Brink benchmark results
@@ -81,6 +83,42 @@ def slope_table(summaries: dict[tuple, dict[str, Any]], key_names: tuple[str, ..
             _num(s["slope_err_max_abs"], ".2f", " deg"), f"{s['slope_within_5deg']}/{s['slope_n']}",
             _num(100 * s["height_err_rel_median_abs"], ".1f", "%"), _num(100 * s["height_err_rel_p90_abs"], ".1f", "%"),
             f"{s['oversteep_correct']}/{s['oversteep_n']}", _num(s["time_median_s"], ".1f", " s"),
+        ])
+    return _table(head, rows)
+
+
+def reconstruction_table(records: list[dict[str, Any]], key: str, key_name: str) -> str:
+    """How often and how well the video became a model, and how long it took."""
+    head = [key_name, "Captures reconstructed", "Frames placed, median", "Camera position error, median",
+            "Gravity error, median", "Gravity error, 90th pct", "Scale error, median", "Scale error, 90th pct",
+            "Time per capture, median", "90th pct", "Slowest stage"]
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in records:
+        groups.setdefault(r[key], []).append(r)
+    rows = []
+    for name, group in groups.items():
+        ok = [r for r in group if r.get("reconstructed")]
+
+        def pct(field: str, q: float, scale: float = 1.0, absolute: bool = False, rows_=ok) -> float:
+            values = [r[field] for r in rows_ if r.get(field) is not None]
+            values = [abs(v) if absolute else v for v in values]
+            return float(np.percentile(values, q)) * scale if values else float("nan")
+
+        placed = [r["frames_registered"] / max(r["frames_selected"], 1) for r in ok]
+        stage_totals: dict[str, float] = {}
+        for r in ok:
+            for stage, seconds in r.get("timings", {}).items():
+                stage_totals[stage] = stage_totals.get(stage, 0.0) + seconds
+        slowest = max(stage_totals, key=stage_totals.get) if stage_totals else "n/a"
+        share = 100 * stage_totals[slowest] / sum(stage_totals.values()) if stage_totals else 0
+        rows.append([
+            str(name), f"{len(ok)}/{len(group)}",
+            _num(100 * float(np.median(placed)) if placed else float("nan"), ".0f", "%"),
+            _num(pct("pose_rmse_m", 50, 1000), ".1f", " mm"),
+            _num(pct("gravity_err_deg", 50), ".2f", " deg"), _num(pct("gravity_err_deg", 90), ".2f", " deg"),
+            _num(pct("scale_err_rel", 50, 100, True), ".1f", "%"), _num(pct("scale_err_rel", 90, 100, True), ".1f", "%"),
+            _num(pct("time_s", 50), ".0f", " s"), _num(pct("time_s", 90), ".0f", " s"),
+            f"{slowest} ({share:.0f}%)",
         ])
     return _table(head, rows)
 

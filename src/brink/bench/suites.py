@@ -139,3 +139,21 @@ def geometry_cases(split: str, count: int) -> list[BenchCase]:
 
 def image_cases(split: str, count: int) -> list[BenchCase]:
     return [make_case(split, i, IMAGE_KINDS) for i in range(count)]
+
+
+def with_tilt(case: BenchCase) -> BenchCase:
+    """Tip the scene 0 to 4 degrees off true gravity, as uneven pit floors are."""
+    rng = np.random.default_rng(case.scene.seed + 999)
+    scene = case.scene.model_copy(
+        update={"tilt_deg": float(rng.uniform(0, 4)), "tilt_azimuth_deg": float(rng.uniform(0, 360))}
+    )
+    # Render about 150 frames per video whatever its length: enough for frame
+    # selection to have a choice, without paying to render frames it will drop.
+    fps = float(np.clip(150.0 / case.capture.duration_s, 1.5, 4.0))
+    return case.model_copy(update={"scene": scene, "capture": case.capture.model_copy(update={"fps": fps})})
+
+
+def full_cases(split: str, geometry_count: int, image_count: int) -> list[BenchCase]:
+    """Cases for the video tier: geometric hazards first, then image-based ones."""
+    cases = geometry_cases(split, geometry_count) + image_cases(split, image_count)
+    return [with_tilt(c) for c in cases]
