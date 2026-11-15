@@ -66,13 +66,32 @@ class SceneSpec(_Spec):
     undercut: UndercutSpec | None = None
     crack: CrackSpec | None = None
     puddle: PuddleSpec | None = None
+    # Real pit floors are not level. The whole scene can be tipped relative to
+    # true gravity by this angle, towards this compass direction in the XY plane.
+    tilt_deg: float = 0.0
+    tilt_azimuth_deg: float = 0.0
 
     @property
     def crest_y(self) -> float:
         return self.height / np.tan(np.radians(self.slope_deg))
 
+    @property
+    def true_up(self) -> NDArray[np.float64]:
+        """Direction opposite to gravity, in scene coordinates."""
+        tilt, az = np.radians(self.tilt_deg), np.radians(self.tilt_azimuth_deg)
+        return np.array([np.sin(tilt) * np.cos(az), np.sin(tilt) * np.sin(az), np.cos(tilt)])
+
+    @property
+    def true_slope_deg(self) -> float:
+        """Slope of the test face measured against true gravity."""
+        s = np.radians(self.slope_deg)
+        normal = np.array([0.0, -np.sin(s), np.cos(s)])
+        return float(np.degrees(np.arccos(np.clip(normal @ self.true_up, -1, 1))))
+
     def digest(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()[:16]
+        # The tilt does not change the mesh, so it is left out of the cache key.
+        payload = self.model_dump_json(exclude={"tilt_deg", "tilt_azimuth_deg"})
+        return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 @dataclass
@@ -312,7 +331,7 @@ def ground_truth(spec: SceneSpec) -> dict:
     faces = [
         {
             "id": "main",
-            "slope_deg": spec.slope_deg,
+            "slope_deg": spec.true_slope_deg,
             "height": spec.height,
             "length": spec.length,
             "outward": [0.0, -1.0, 0.0],
@@ -368,4 +387,4 @@ def ground_truth(spec: SceneSpec) -> dict:
                 "radius_y": p.radius_y,
             }
         )
-    return {"spec": json.loads(spec.model_dump_json()), "faces": faces, "hazards": hazards}
+    return {"spec": json.loads(spec.model_dump_json()), "true_up": spec.true_up.tolist(), "faces": faces, "hazards": hazards}

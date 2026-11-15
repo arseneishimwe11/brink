@@ -16,19 +16,22 @@ def lattice(seed: int, size: int = _LATTICE_SIZE) -> NDArray[np.float32]:
 def value_noise(points: NDArray, grid: NDArray[np.float32]) -> NDArray[np.float32]:
     """Smoothly interpolated lattice noise in [-1, 1] at ``points`` (..., 3)."""
     n = grid.shape[0]
+    flat = grid.reshape(-1)
     p = np.asarray(points, dtype=np.float32)
     base = np.floor(p)
     f = p - base
-    i0 = base.astype(np.int64) % n
+    i0 = base.astype(np.int32) % n
     i1 = (i0 + 1) % n
-    u = f * f * (3.0 - 2.0 * f)
-    x0, y0, z0 = i0[..., 0], i0[..., 1], i0[..., 2]
-    x1, y1, z1 = i1[..., 0], i1[..., 1], i1[..., 2]
+    u = f * f * (np.float32(3.0) - np.float32(2.0) * f)
+    # Flat indices are much faster than three-way fancy indexing.
+    x0, x1 = i0[..., 0] * (n * n), i1[..., 0] * (n * n)
+    y0, y1 = i0[..., 1] * n, i1[..., 1] * n
+    z0, z1 = i0[..., 2], i1[..., 2]
     ux, uy, uz = u[..., 0], u[..., 1], u[..., 2]
-    c00 = grid[x0, y0, z0] * (1 - ux) + grid[x1, y0, z0] * ux
-    c10 = grid[x0, y1, z0] * (1 - ux) + grid[x1, y1, z0] * ux
-    c01 = grid[x0, y0, z1] * (1 - ux) + grid[x1, y0, z1] * ux
-    c11 = grid[x0, y1, z1] * (1 - ux) + grid[x1, y1, z1] * ux
+    c00 = flat[x0 + y0 + z0] * (1 - ux) + flat[x1 + y0 + z0] * ux
+    c10 = flat[x0 + y1 + z0] * (1 - ux) + flat[x1 + y1 + z0] * ux
+    c01 = flat[x0 + y0 + z1] * (1 - ux) + flat[x1 + y0 + z1] * ux
+    c11 = flat[x0 + y1 + z1] * (1 - ux) + flat[x1 + y1 + z1] * ux
     c0 = c00 * (1 - uy) + c10 * uy
     c1 = c01 * (1 - uy) + c11 * uy
     return (c0 * (1 - uz) + c1 * uz).astype(np.float32)

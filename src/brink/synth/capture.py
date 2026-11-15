@@ -64,10 +64,10 @@ def _smooth_signal(t: NDArray, rng: np.random.Generator, periods: tuple[float, .
     return total * rms / (np.sqrt(np.mean(total**2)) + 1e-9)
 
 
-def look_at(position: NDArray, target: NDArray) -> NDArray:
+def look_at(position: NDArray, target: NDArray, up: NDArray | None = None) -> NDArray:
     forward = target - position
     forward = forward / np.linalg.norm(forward)
-    right = np.cross(forward, [0.0, 0.0, 1.0])
+    right = np.cross(forward, [0.0, 0.0, 1.0] if up is None else up)
     right = right / np.linalg.norm(right)
     down = np.cross(forward, right)
     return np.stack([right, down, forward], axis=1)
@@ -115,10 +115,11 @@ def camera_path(scene: SceneSpec, capture: CaptureSpec) -> CameraPath:
         ty = np.full(n, mid_y)
     if rng.random() < 0.5:  # walk either way
         x, tx = -x, -tx
-    z = capture.camera_height + bob
     tz = capture.aim_height * scene.height + _smooth_signal(t, rng, (8.0, 21.0), 0.06 * scene.height)
 
-    positions = np.stack([x, y, z], axis=1)
+    # Feet on the ground, body upright along true gravity.
+    up = scene.true_up
+    positions = np.stack([x, y, np.zeros(n)], axis=1) + (capture.camera_height + bob)[:, None] * up
     targets = np.stack([tx, ty, tz], axis=1)
     shake = np.radians(capture.shake_deg)
     jitter = np.stack(
@@ -126,5 +127,5 @@ def camera_path(scene: SceneSpec, capture: CaptureSpec) -> CameraPath:
     )
     rotations = np.empty((n, 3, 3))
     for i in range(n):
-        rotations[i] = look_at(positions[i], targets[i]) @ _rotvec(jitter[i])
+        rotations[i] = look_at(positions[i], targets[i], up) @ _rotvec(jitter[i])
     return CameraPath(t, positions, rotations)
