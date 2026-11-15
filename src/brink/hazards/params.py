@@ -57,4 +57,5 @@ class HazardParams(BaseModel):
     crack_cell_voxels: float = 1.0
     crack_image_sigmas: float = 3.5
     crack_min_length: float = 0.4
+    crack_max_thickness: float = 0.10
     crest_min_coverage: float = 0.5  # share of the strip behind the edge that must be reconstructed

@@ -39,7 +39,7 @@ class CrestCheck:
 
 def detect_cracks(
     cloud: PointCloud, slope: NDArray, face: Face, segment: FaceSegment,
-    frames: FrameSet, voxel: float, params: HazardParams,
+    frames: FrameSet, voxel: float, params: HazardParams, debug: dict | None = None,
 ) -> CrestCheck:
     xyz = cloud.xyz.astype(np.float64)
     s_all, t_all = xyz @ segment.s_dir, xyz @ segment.t_dir
@@ -101,27 +101,34 @@ def detect_cracks(
     med = np.median(ref)
     spread = 1.4826 * np.median(np.abs(ref - med)) + 1e-6
     score = (darkness - med) / spread
-    line = seen & (score >= params.crack_image_sigmas)
-    line = cv2.morphologyEx(line.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 3), np.uint8)) > 0
+    # Start from clearly dark cells and follow the line into fainter ones.
+    strong = seen & (score >= params.crack_image_sigmas)
+    weak = seen & (score >= params.crack_image_sigmas - 1.2)
+    weak_labels, _ = components(weak)
+    line = np.isin(weak_labels, np.unique(weak_labels[strong])) & weak
+    # Bridge short breaks along the face so one crack stays one piece.
+    line = cv2.morphologyEx(line.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 3), np.uint8)) > 0
 
+    if debug is not None:
+        debug.update(filled=filled, thin_gap=thin_gap, score=np.where(seen, score, np.nan), line=line, cell=cell,
+                     hits=hits.reshape(ns, nt))
     cracks = []
     labels, count = components(line)
     for c in range(1, count + 1):
         m = labels == c
         if m.sum() < 5:
             continue
-        pts = np.stack([gs[m], gt[m]], axis=1).astype(float) * cell
-        centred = pts - pts.mean(0)
-        values, vectors = np.linalg.eigh(centred.T @ centred / len(pts))
-        length = float(4 * np.sqrt(max(values[1], 0)))
-        width = float(4 * np.sqrt(max(values[0], 0))) + cell
-        along_face = abs(vectors[0, 1])  # s-component of the long axis
-        if length < params.crack_min_length or length < 4 * width or along_face < np.cos(np.radians(40)):
+        # A crack is long, thin, and runs roughly along the face. It may wander,
+        # so it is measured by its reach rather than by fitting a straight line.
+        along = float((np.ptp(gs[m]) + 1) * cell)
+        across = float((np.ptp(gt[m]) + 1) * cell)
+        thickness = float(m.sum() * cell * cell / max(along, across))
+        if along < params.crack_min_length or thickness > params.crack_max_thickness or along < 0.8 * across:
             continue
         where = m.ravel()
         cracks.append(CrackRegion(
-            centre=centres[where].mean(0), length=length,
-            offset_from_edge=float(pts[:, 1].mean() - 0.05),
+            centre=centres[where].mean(0), length=along,
+            offset_from_edge=float(np.mean(gt[m]) * cell - 0.05),
             image_score=float(np.median(score[m])), has_gap=bool(thin_gap[m].mean() > 0.2), cells=int(m.sum()),
         ))
     return CrestCheck(True, cracks)

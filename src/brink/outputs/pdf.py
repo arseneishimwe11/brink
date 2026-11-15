@@ -99,10 +99,12 @@ def save_pdf(report: Report, hazard_image: Path | None, path: str | Path) -> Non
             story += [Spacer(1, 3 * mm), Image(str(hazard_image), width=150 * mm, height=150 * mm * 9 / 16, kind="proportional")]
 
     story += [Spacer(1, 3 * mm)]
-    checks = "Checked for: undercut bases, overhangs, faces steeper than the stated material allows, cracks along the top edge, standing water at the foot."
-    rule_note = (
-        f"Hazard rules version {report.rules_version}. "
-        + ("These thresholds are PROVISIONAL and have not been approved by an engineer. " if report.rules_provisional else "")
-    )
-    story.append(Paragraph(checks + " " + rule_note + " ".join(report.limitations), small))
+    status = "provisional, not approved by an engineer" if report.rules_provisional else "approved"
+    story.append(Paragraph(
+        "Checked for: undercut bases, overhangs, faces steeper than the stated material allows, cracks along "
+        f"the top edge, standing water at the foot. Hazard rules version {report.rules_version} ({status}).", small,
+    ))
+    story.append(Spacer(1, 1.5 * mm))
+    for note in report.limitations:
+        story.append(Paragraph(f"&bull; {note}", small))
     doc.build(story)
