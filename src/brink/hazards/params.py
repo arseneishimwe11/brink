@@ -45,3 +45,14 @@ class HazardParams(BaseModel):
     ray_tolerance: float = 0.25  # slack in the 'seen under the lip' test, as a share of hollow height
     undercut_max_lip_fraction: float = 0.6  # lip above this share of the face is an overhang
     downward_deg: float = 105.0  # normals method: slope beyond this faces down
+
+    # -- water at the toe
+    water_cell_voxels: float = 2.5
+    water_image_sigmas: float = 3.0  # how unlike dry floor a gap must look
+    water_min_area: float = 0.06  # square metres
+
+    # -- crest cracks
+    crack_cell_voxels: float = 1.0
+    crack_image_sigmas: float = 3.5
+    crack_min_length: float = 0.4
+    crest_min_coverage: float = 0.5  # share of the strip behind the edge that must be reconstructed

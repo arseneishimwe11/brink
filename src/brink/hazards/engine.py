@@ -9,6 +9,7 @@ import numpy as np
 from brink.domain import Evidence, Face, Hazard, HazardType, Measurement, Severity
 from brink.geometry import PointCloud
 from brink.hazards.faces import FaceSegment, segment_faces
+from brink.hazards.imagery import FrameSet
 from brink.hazards.params import HazardParams
 from brink.hazards.preprocess import preprocess, slope_degrees
 from brink.hazards.profiles import FaceProfiles, compute_profiles
@@ -215,3 +216,63 @@ def analyze_geometry(
 
     result.hazard_of_point = hazard_of_point
     return result
+
+
+def add_image_hazards(
+    result: GeometryResult, frames: FrameSet, rules: Rules, params: HazardParams | None = None, metric: bool = True,
+) -> list[str]:
+    """Look for water at the toe and cracks at the crest; append them to ``result``.
+
+    Returns plain statements about anything that could not be checked.
+    """
+    from brink.hazards.cracks import detect_cracks
+    from brink.hazards.water import detect_water
+
+    params = params or HazardParams()
+    notes: list[str] = []
+    if not result.faces:
+        return notes
+    slope = slope_degrees(result.cloud.normals)
+    tallest = max(f.height for f in result.faces)
+    unit = "m" if metric else "model"
+    for face, segment, profiles in zip(result.faces, result.segments, result.profiles, strict=True):
+        if face.height < 0.5 * tallest:
+            continue
+        for region in detect_water(result.cloud, face, segment, profiles, frames, result.voxel, params):
+            confidence = 0.35 + 0.06 * (region.image_score - params.water_image_sigmas) + 0.25 * min(1.0, region.area / 0.4)
+            hazard = Hazard(
+                id=f"hz-{len(result.hazards)}", type=HazardType.WATER_AT_TOE, face_id=face.id,
+                location=tuple(float(v) for v in region.centre), extent_along_face=region.extent_along_face,
+                measurements=[Measurement(name="area", value=region.area, unit=f"{unit}2")],
+                confidence=float(np.clip(confidence, 0.2, 0.95)), severity=rules.fixed(HazardType.WATER_AT_TOE),
+                rule_id="water_at_toe",
+                evidence=[
+                    Evidence(kind="geometry", detail="gap in the reconstructed floor", score=region.gap_share),
+                    Evidence(kind="image", detail="patch looks unlike dry floor across views", score=region.image_score),
+                ],
+            )
+            hazard.message = describe(hazard, face.label, metric)
+            result.hazards.append(hazard)
+        check = detect_cracks(result.cloud, slope, face, segment, frames, result.voxel, params)
+        if not check.visible:
+            notes.append(
+                f"The ground behind the top edge of face {face.label} was not visible in this video, "
+                "so cracks there could not be checked. Film the top edge from above if it can be reached without risk."
+            )
+        for crack in check.cracks:
+            confidence = 0.35 + 0.05 * (crack.image_score - params.crack_image_sigmas) + (0.2 if crack.has_gap else 0.0)
+            hazard = Hazard(
+                id=f"hz-{len(result.hazards)}", type=HazardType.CREST_CRACK, face_id=face.id,
+                location=tuple(float(v) for v in crack.centre), extent_along_face=crack.length,
+                measurements=[
+                    Measurement(name="length", value=crack.length, unit=unit),
+                    Measurement(name="distance_from_edge", value=crack.offset_from_edge, unit=unit),
+                ],
+                confidence=float(np.clip(confidence, 0.2, 0.95)), severity=rules.fixed(HazardType.CREST_CRACK),
+                rule_id="crest_crack",
+                evidence=[Evidence(kind="image", detail="thin dark line on the top surface", score=crack.image_score)]
+                + ([Evidence(kind="geometry", detail="matching thin gap in the surface")] if crack.has_gap else []),
+            )
+            hazard.message = describe(hazard, face.label, metric)
+            result.hazards.append(hazard)
+    return notes

@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from brink.domain import Hazard, Severity
+from brink.geometry.projection import project_points
 from brink.hazards.engine import GeometryResult
 from brink.outputs.colors import HAZARD_NAME, HAZARD_RGB
 from brink.stages.sfm.base import SfMResult
@@ -16,22 +17,9 @@ from brink.stages.sfm.base import SfMResult
 _RANK = {Severity.DANGER: 2, Severity.WARNING: 1, Severity.NOTE: 0}
 
 
-def _project(points_analysis: NDArray, sfm: SfMResult, i: int, rotation: NDArray, scale: float):
-    """Pixel coordinates and depth of analysis-frame points in frame ``i``."""
-    world = (points_analysis / scale) @ rotation  # undo: analysis = scale * R @ sfm
-    cam = (world - sfm.positions[i]) @ sfm.rotations[i]
-    z = cam[:, 2]
-    safe = np.where(z > 1e-6, z, 1.0)
-    x, y = cam[:, 0] / safe, cam[:, 1] / safe
-    k1, k2 = sfm.distortion[0], sfm.distortion[1]
-    r2 = x * x + y * y
-    d = 1 + k1 * r2 + k2 * r2 * r2
-    return sfm.fx * x * d + sfm.cx, sfm.fy * y * d + sfm.cy, z
-
-
 def _best_frame(sfm: SfMResult, target: NDArray, outward: NDArray | None, rotation: NDArray, scale: float) -> int:
     """Frame that looks most squarely at ``target`` with it near the image centre."""
-    seen = np.array([[c[0] for c in _project(target[None], sfm, i, rotation, scale)] for i in range(sfm.registered)])
+    seen = np.array([[c[0] for c in project_points(target[None], sfm, i, rotation, scale)] for i in range(sfm.registered)])
     u, v, z = seen[:, 0], seen[:, 1], seen[:, 2]
     off = np.hypot((u - sfm.width / 2) / sfm.width, (v - sfm.height / 2) / sfm.height)
     cost = off + np.where(z > 0, 0, 10)
@@ -90,7 +78,7 @@ def save_hazard_image(
     xyz = geometry.cloud.xyz.astype(np.float64)
     base = geometry.cloud.rgb if geometry.cloud.rgb is not None else np.full_like(colours, 150)
     marked = np.abs(colours.astype(int) - (0.55 * base + 0.45 * base.mean(1, keepdims=True)).astype(int)).sum(1) > 40
-    u, v, z = _project(xyz, sfm, index, rotation, scale)
+    u, v, z = project_points(xyz, sfm, index, rotation, scale)
     ok = (z > 0) & (u >= 0) & (u < image.shape[1]) & (v >= 0) & (v < image.shape[0])
     order = np.flatnonzero(ok)[np.argsort(-z[ok])]  # far first, near last
     depth = np.full(image.shape[:2], np.inf, np.float32)
@@ -108,7 +96,7 @@ def save_hazard_image(
     image = cv2.addWeighted(overlay, 0.6, image, 0.4, 0)
 
     for n, hazard in enumerate(hazards[:6]):
-        hu, hv, hz = _project(np.array(hazard.location)[None], sfm, index, rotation, scale)
+        hu, hv, hz = project_points(np.array(hazard.location)[None], sfm, index, rotation, scale)
         if hz[0] <= 0:
             continue
         label = faces[hazard.face_id].label if hazard.face_id in faces else "?"

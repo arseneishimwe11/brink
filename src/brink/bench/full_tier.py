@@ -27,7 +27,6 @@ from brink.synth.scene import build_scene
 VARIANTS: dict[str, dict[str, Any]] = {
     "sensor": {},  # defaults: SIFT cameras, stereo dense, gravity from the phone sensor file
     "scene": {"gravity": "scene"},
-    "aliked": {"sfm": "colmap_aliked"},
     "global": {"sfm": "colmap_sift_global"},
     "monodepth": {"dense": "monodepth"},
 }

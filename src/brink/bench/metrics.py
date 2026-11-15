@@ -104,6 +104,20 @@ def score_case(
     out["false_overhang_depths"] = [h.measurement("depth").value for h in spurious]
     out["false_overhang_conf"] = [h.confidence for h in spurious]
 
+    # -- cracks and water: found or not, plus anything reported that is not there
+    for name, htype in (("crack", HazardType.CREST_CRACK), ("water", HazardType.WATER_AT_TOE)):
+        truths = [h for h in truth["hazards"] if h["type"] == htype.value]
+        preds = [h.model_copy(update={"location": tuple(to_gt(h.location))}) for h in hazards if h.type is htype]
+        used: set[int] = set()
+        found = 0
+        for gt in truths:
+            hits = [i for i, h in enumerate(preds) if _overlaps(h, gt, strike, 0.3)]
+            found += bool(hits)
+            used.update(hits)
+        out[f"{name}_truth"] = len(truths)
+        out[f"{name}_found"] = found
+        out[f"{name}_false"] = len(preds) - len(used)
+
     # -- over-steep, judged only where the truth is clearly one side of the rule
     limit = rules.material(material).max_slope_deg + rules.defaults.slope_margin_deg
     gap = gt_face["slope_deg"] - limit
@@ -176,6 +190,16 @@ def summarise(records: list[dict[str, Any]]) -> dict[str, Any]:
     height = [r["height_err_rel"] for r in ok if r.get("face_found")]
     summary["height_err_rel_median_abs"] = _pct([abs(e) for e in height], 50)
     summary["height_err_rel_p90_abs"] = _pct([abs(e) for e in height], 90)
+
+    for name in ("crack", "water"):
+        with_it = [r for r in ok if r.get(f"{name}_truth", 0) > 0]
+        without = [r for r in ok if r.get(f"{name}_truth", 0) == 0]
+        k, n = sum(r[f"{name}_found"] for r in with_it), sum(r[f"{name}_truth"] for r in with_it)
+        summary[name] = {
+            "detected": k, "n": n, "rate": k / n if n else float("nan"), "ci95": wilson(k, n),
+            "captures_without": len(without),
+            "false_captures": sum(r.get(f"{name}_false", 0) > 0 for r in without),
+        }
 
     judged = [r for r in ok if r["oversteep_expected"] is not None]
     summary["oversteep_correct"] = sum(r["oversteep_expected"] == r["oversteep_predicted"] for r in judged)

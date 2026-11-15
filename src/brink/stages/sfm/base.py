@@ -79,8 +79,9 @@ def make_solver(name: str, device: str = "cpu") -> SfMSolver:
     presets = {
         "colmap_sift": {"features": "sift", "mapper": "incremental"},
         "colmap_sift_global": {"features": "sift", "mapper": "global"},
-        "colmap_aliked": {"features": "aliked", "mapper": "incremental"},
     }
+    # Learned features (ALIKED + LightGlue) exist in COLMAP 4 but the PyPI
+    # build of pycolmap has no ONNX runtime and aborts if asked for them.
     if name not in presets:
         raise ValueError(f"unknown SfM method {name!r}; choose from {sorted(presets)}")
     import os

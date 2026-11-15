@@ -87,6 +87,19 @@ def slope_table(summaries: dict[tuple, dict[str, Any]], key_names: tuple[str, ..
     return _table(head, rows)
 
 
+def image_hazard_table(summaries: dict[tuple, dict[str, Any]], key_names: tuple[str, ...]) -> str:
+    head = [*key_names, "Crest cracks flagged", "Captures without a crack that got one reported",
+            "Puddles at the toe flagged", "Captures without a puddle that got one reported"]
+    rows = []
+    for key, s in summaries.items():
+        c, w = s["crack"], s["water"]
+        rows.append([
+            *[str(k) for k in key], _rate(c), f"{c['false_captures']}/{c['captures_without']}",
+            _rate(w), f"{w['false_captures']}/{w['captures_without']}",
+        ])
+    return _table(head, rows)
+
+
 def reconstruction_table(records: list[dict[str, Any]], key: str, key_name: str) -> str:
     """How often and how well the video became a model, and how long it took."""
     head = [key_name, "Captures reconstructed", "Frames placed, median", "Camera position error, median",

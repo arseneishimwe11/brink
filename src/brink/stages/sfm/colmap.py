@@ -14,7 +14,7 @@ from brink.stages.sfm.base import SfMResult
 class ColmapSolver:
     """Feature extraction, sequential matching and mapping.
 
-    ``features``: "sift" or "aliked" (learned features with LightGlue matching).
+    ``features``: "sift" (the only type the PyPI build of pycolmap can run).
     ``mapper``: "incremental" (classic COLMAP) or "global" (GLOMAP-style).
     """
 
@@ -39,13 +39,11 @@ class ColmapSolver:
         extraction.num_threads = self.threads
         matching = pycolmap.FeatureMatchingOptions()
         matching.num_threads = self.threads
-        if self.features == "aliked":
-            extraction.type = pycolmap.FeatureExtractorType.ALIKED_N16ROT
-            matching.type = pycolmap.FeatureMatcherType.ALIKED_LIGHTGLUE
-        else:
-            extraction.type = pycolmap.FeatureExtractorType.SIFT
-            extraction.sift.max_num_features = self.max_features
-            matching.type = pycolmap.FeatureMatcherType.SIFT_BRUTEFORCE
+        if self.features != "sift":
+            raise ValueError(f"unsupported feature type {self.features!r}")
+        extraction.type = pycolmap.FeatureExtractorType.SIFT
+        extraction.sift.max_num_features = self.max_features
+        matching.type = pycolmap.FeatureMatcherType.SIFT_BRUTEFORCE
         reader = pycolmap.ImageReaderOptions()
         reader.camera_model = "SIMPLE_RADIAL"
         pycolmap.extract_features(

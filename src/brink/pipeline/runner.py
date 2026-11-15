@@ -20,7 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from brink.domain import Capture, Reconstruction, Report, ScaleEstimate, Site
 from brink.geometry import PointCloud
-from brink.hazards.engine import GeometryResult, analyze_geometry
+from brink.hazards.engine import GeometryResult, add_image_hazards, analyze_geometry
+from brink.hazards.imagery import FrameSet
 from brink.hazards.params import HazardParams
 from brink.rules import Rules, load_rules
 from brink.stages import orient
@@ -210,6 +211,10 @@ def run_pipeline(
         metric, rules, site.material, config.hazards, metric=recon.scale.is_metric,
         gravity_uncertainty_deg=gravity.uncertainty_deg,
     )
+    image_set = FrameSet.load(sfm, frames_dir, rotation, recon.scale.factor)
+    notes = add_image_hazards(geometry, image_set, rules, config.hazards, metric=recon.scale.is_metric)
     timings["hazards"] = time.perf_counter() - start
     recon.success = True
-    return finish(geometry, sfm=sfm, frames=frames, rotation=rotation, scale=recon.scale.factor)
+    result = finish(geometry, sfm=sfm, frames=frames, rotation=rotation, scale=recon.scale.factor)
+    result.report.limitations = notes + result.report.limitations
+    return result

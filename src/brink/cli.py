@@ -112,6 +112,8 @@ def bench_full(
         "Reconstruction:\n\n" + report.reconstruction_table(records, "variant", "Variant")
         + "\n\nUndercuts and overhangs:\n\n" + report.hazard_table(summaries, ("Variant",))
         + "\n\nSlope and height of the test face:\n\n" + report.slope_table(summaries, ("Variant",))
+        + "\n\nCracks and water (all captures):\n\n"
+        + report.image_hazard_table(report.group_summaries(records, ("variant",)), ("Variant",))
     )
     command = f"brink bench full --split {split} --count {count} --image-count {image_count} --variants {variants}"
     report.save_section(DERIVED / "bench", f"full-{split}", f"Full tier (video in, hazards out), {split} split", command, body, records)

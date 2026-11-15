@@ -130,7 +130,14 @@ def make_case(split: str, index: int, kinds: list[str] | None = None) -> BenchCa
         scene = base.model_copy(update={"puddle": puddle})
     else:
         raise ValueError(kind)
-    return BenchCase(id=name, split=split, kind=kind, scene=scene, capture=_capture(rng, scene, seed))
+    capture = _capture(rng, scene, seed)
+    if kind == "pile_crack":
+        # A crack behind the top edge cannot be seen from chest height on a pile
+        # this tall. These captures hold the phone overhead and stand closer.
+        capture = capture.model_copy(
+            update={"camera_height": float(rng.uniform(1.8, 2.1)), "standoff": float(rng.uniform(1.6, 2.4)), "aim_height": 0.85}
+        )
+    return BenchCase(id=name, split=split, kind=kind, scene=scene, capture=capture)
 
 
 def geometry_cases(split: str, count: int) -> list[BenchCase]:
